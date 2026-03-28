@@ -5,6 +5,15 @@
 #include <Adafruit_SSD1306.h>
 #include <LowPower.h>
 
+// Forward declarations
+void buttonHandler();
+void wheelHandler();
+void updateButton();
+void updateWheel();
+void updateDisplay();
+float readEEPROM();
+void writeEEPROM(float value);
+
 // Display settings
 #define SCREEN_WIDTH 128 // OLED display width, in pixels
 #define SCREEN_HEIGHT 64 // OLED display height, in pixels
@@ -19,16 +28,17 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT,
 // Button settings
 #define BUTTON_PIN 2 // Pin for the reset button
 #define BUTTON_DEBOUNCE 50 // Debounce time in milliseconds
-bool buttonState = false; // Current state of the button
+volatile bool buttonState = false; // Current state of the button
 bool lastButtonState = false; // Previous state of the button
-unsigned long lastDebounceTime = 0; // Last time the button state changed
+volatile unsigned long lastButtonDebounceTime = 0; // Last time the button state changed
 
 // Wheel settings
 #define WHEEL_PIN 3 // Pin for the wheel sensor
 #define WHEEL_DIAMETER 0.66 // Wheel diameter in meters
 #define WHEEL_CIRCUMFERENCE (WHEEL_DIAMETER * PI) // Wheel circumference in meters
-volatile unsigned long wheelCount = 0; // Number of wheel rotations
+volatile unsigned long wheelCount = 0; // Number of wheel rotations since last update
 volatile unsigned long lastWheelTime = 0; // Last time the wheel rotated
+volatile unsigned long lastWheelTime_prev = 0; // Second to last wheel rotation time
 float wheelSpeed = 0; // Current speed in km/h
 float tripDistance = 0; // Current trip distance in km
 float totalDistance = 0; // Total distance in km
@@ -70,6 +80,7 @@ void setup() {
 
   // Read total distance from EEPROM
   totalDistance = readEEPROM();
+  if (isnan(totalDistance)) totalDistance = 0;
 }
 
 // Loop function
@@ -120,9 +131,9 @@ void buttonHandler() {
   unsigned long currentTime = millis();
 
   // Check if the button state changed
-  if (currentTime - lastDebounceTime > BUTTON_DEBOUNCE) {
+  if (currentTime - lastButtonDebounceTime > BUTTON_DEBOUNCE) {
     // Update the last debounce time
-    lastDebounceTime = currentTime;
+    lastButtonDebounceTime = currentTime;
 
     // Toggle the button state
     buttonState = !buttonState;
@@ -135,18 +146,24 @@ void wheelHandler() {
   wheelCount++;
 
   // Update the last wheel time
+  lastWheelTime_prev = lastWheelTime;
   lastWheelTime = millis();
 }
 
 // Update button state
 void updateButton() {
+  bool currentButtonState;
+  noInterrupts();
+  currentButtonState = buttonState;
+  interrupts();
+
   // Check if the button state changed
-  if (buttonState != lastButtonState) {
+  if (currentButtonState != lastButtonState) {
     // Update the last button state
-    lastButtonState = buttonState;
+    lastButtonState = currentButtonState;
 
     // Check if the button is pressed
-    if (buttonState == true) {
+    if (currentButtonState == true) {
       // Reset the trip distance
       tripDistance = 0;
     }
@@ -155,20 +172,34 @@ void updateButton() {
 
 // Update wheel speed and distance
 void updateWheel() {
-  // Calculate the wheel speed in km/h
-  wheelSpeed = (WHEEL_CIRCUMFERENCE * wheelCount * 3.6) / (millis() - lastWheelTime);
+  unsigned long count;
+  unsigned long lastTime;
+  unsigned long lastTime_prev;
+  unsigned long currentTime = millis();
 
-  // Check if the wheel speed is above the minimum threshold
-  if (wheelSpeed > WHEEL_MIN_SPEED) {
-    // Calculate the trip distance in km
-    tripDistance += (WHEEL_CIRCUMFERENCE * wheelCount) / 1000;
-
-    // Calculate the total distance in km
-    totalDistance += (WHEEL_CIRCUMFERENCE * wheelCount) / 1000;
-  }
-
-  // Reset the wheel count
+  noInterrupts();
+  count = wheelCount;
+  lastTime = lastWheelTime;
+  lastTime_prev = lastWheelTime_prev;
   wheelCount = 0;
+  interrupts();
+
+  if (count > 0) {
+    unsigned long timeElapsed = lastTime - lastTime_prev;
+    if (timeElapsed > 0) {
+        wheelSpeed = (WHEEL_CIRCUMFERENCE * 3600.0) / timeElapsed;
+    }
+
+    if (wheelSpeed > WHEEL_MIN_SPEED) {
+        float distance = (WHEEL_CIRCUMFERENCE * count) / 1000.0;
+        tripDistance += distance;
+        totalDistance += distance;
+    }
+  } else {
+    if (currentTime - lastTime > 2000) {
+        wheelSpeed = 0;
+    }
+  }
 }
 
 // Update display
