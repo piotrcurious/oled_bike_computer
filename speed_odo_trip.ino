@@ -215,26 +215,26 @@ void updateDisplay() {
   // Display current speed in big font
   display.setTextSize(3);
   display.setTextColor(WHITE);
-  display.setCursor(0,0);
+  display.setCursor(0, 0);
   display.print(wheelSpeed, 1);
+  display.setTextSize(1);
   display.print(" km/h");
 
-  // Display last stored trip in small font in the bottom right corner
+  // Middle line: Total Distance
   display.setTextSize(1);
-  display.setCursor(80, 54);
+  display.setCursor(0, 42);
+  display.print("Total: ");
+  display.print(totalDistance, 1);
+  display.print(" km");
+
+  // Bottom line: Trip and Reset state
+  display.setCursor(0, 54);
   display.print("Trip: ");
   display.print(tripDistance, 2);
   display.print(" km");
 
-  // Display total trip counter in bottom left corner
-  display.setCursor(0, 54);
-  display.print("Total: ");
-  display.print(totalDistance, 2);
-  display.print(" km");
-
-  // Display the button state
-  display.setCursor(64, 54);
-  display.print("Reset: ");
+  display.setCursor(90, 54);
+  display.print("R:");
   display.print(buttonState ? "ON" : "OFF");
 
   // Display the data

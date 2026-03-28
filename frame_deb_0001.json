@@ -1,0 +1,16 @@
+{
+  "width": 128,
+  "height": 64,
+  "commands": [
+    {"type": "text", "x": 0, "y": 0, "size": 3, "text": "0.0", "color": 1},
+    {"type": "text", "x": 54, "y": 0, "size": 1, "text": " km/h", "color": 1},
+    {"type": "text", "x": 0, "y": 42, "size": 1, "text": "Total: ", "color": 1},
+    {"type": "text", "x": 42, "y": 42, "size": 1, "text": "0.0", "color": 1},
+    {"type": "text", "x": 60, "y": 42, "size": 1, "text": " km", "color": 1},
+    {"type": "text", "x": 0, "y": 54, "size": 1, "text": "Trip: ", "color": 1},
+    {"type": "text", "x": 36, "y": 54, "size": 1, "text": "0.00", "color": 1},
+    {"type": "text", "x": 60, "y": 54, "size": 1, "text": " km", "color": 1},
+    {"type": "text", "x": 90, "y": 54, "size": 1, "text": "R:", "color": 1},
+    {"type": "text", "x": 102, "y": 54, "size": 1, "text": "OFF", "color": 1}
+  ]
+}
