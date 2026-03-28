@@ -2,11 +2,13 @@
 #define ARDUINO_H
 
 #include <iostream>
+#include <fstream>
 #include <cmath>
 #include <vector>
 #include <map>
 #include <chrono>
 #include <stdint.h>
+#include <string>
 
 #define PI 3.14159265358979323846
 #define HIGH 0x1
@@ -36,6 +38,7 @@ void pinMode(uint8_t, uint8_t);
 int digitalRead(uint8_t);
 void digitalWrite(uint8_t, uint8_t);
 int analogRead(uint8_t);
+void set_analog_input(uint8_t pin, int value);
 void attachInterrupt(uint8_t, void (*)(), int);
 uint8_t digitalPinToInterrupt(uint8_t);
 void trigger_interrupt(uint8_t pin);
@@ -56,29 +59,56 @@ public:
 };
 extern Serial_ Serial;
 
+struct DrawCmd {
+    std::string type;
+    int16_t x, y;
+    uint8_t size;
+    std::string text;
+    bool color;
+};
+
 class Adafruit_SSD1306 {
+    int width, height;
+    int16_t cur_x = 0, cur_y = 0;
+    uint8_t cur_size = 1;
+    bool cur_color = WHITE;
+    std::vector<DrawCmd> commands;
+    std::string name = "main";
+
 public:
-    Adafruit_SSD1306(int w, int h, int mosi, int clk, int dc, int reset, int cs) {}
-    Adafruit_SSD1306(int w, int h) {}
-    Adafruit_SSD1306(int w, int h, int mosi, int clk, int dc, int rst) {}
+    Adafruit_SSD1306(int w, int h, int mosi, int clk, int dc, int reset, int cs) : width(w), height(h) {}
+    Adafruit_SSD1306(int w, int h) : width(w), height(h) {}
+    Adafruit_SSD1306(int w, int h, int mosi, int clk, int dc, int rst) : width(w), height(h) {}
+
+    void set_name(const std::string& n) { name = n; }
     void begin(uint8_t) {}
-    void clearDisplay() {}
-    void setTextSize(uint8_t) {}
-    void setTextColor(uint8_t) {}
-    void setCursor(int16_t, int16_t) {}
-    void print(float, int) {}
-    void print(const char*) {}
-    void print(float) {}
-    void print(int) {}
-    void println(const char*) {}
-    void display() {}
+    void clearDisplay() { commands.clear(); }
+    void setTextSize(uint8_t s) { cur_size = s; }
+    void setTextColor(uint8_t c) { cur_color = (c == WHITE); }
+    void setCursor(int16_t x, int16_t y) { cur_x = x; cur_y = y; }
+
+    void print(const std::string& s) {
+        commands.push_back({"text", cur_x, cur_y, cur_size, s, cur_color});
+        cur_x += s.length() * 6 * cur_size;
+    }
+    void print(const char* s) { print(std::string(s)); }
+    void print(float f, int p = 2) {
+        char buf[32];
+        snprintf(buf, sizeof(buf), "%.*f", p, f);
+        print(std::string(buf));
+    }
+    void print(int i) { print(std::to_string(i)); }
+    void println(const char* s) { print(s); cur_x = 0; cur_y += 8 * cur_size; }
+
+    void display();
     void dim(bool) {}
 };
 
 class EEPROM_ {
+    std::map<int, byte> storage;
 public:
-    byte read(int addr) { return 0; }
-    void write(int addr, byte val) {}
+    byte read(int addr) { return storage[addr]; }
+    void write(int addr, byte val) { storage[addr] = val; }
 };
 extern EEPROM_ EEPROM;
 

@@ -29,6 +29,8 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT,
 #define BRIGHTNESS_MIN 0 // Minimum brightness value
 #define BRIGHTNESS_STEP 5 // Brightness decrement step
 int brightness = BRIGHTNESS_MAX; // Current brightness value
+unsigned long lastDisplayUpdate = 0;
+#define DISPLAY_INTERVAL 500
 
 // Button settings
 #define BUTTON_PIN 2 // Pin for the reset button
@@ -104,7 +106,10 @@ void loop() {
   updateSpeedAndDistance();
 
   // Update display
-  updateDisplay();
+  if (millis() - lastDisplayUpdate >= DISPLAY_INTERVAL) {
+    updateDisplay();
+    lastDisplayUpdate = millis();
+  }
 
   // Check if wheel is inactive
   if (millis() - lastWheelTime > WHEEL_TIMEOUT) {

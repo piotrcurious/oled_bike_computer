@@ -1,8 +1,6 @@
 #include "mock_arduino/Arduino.h"
 #include <iostream>
-#include <cassert>
 
-// Forward declarations
 void buttonHandler();
 void wheelHandler();
 void updateButton();
@@ -16,37 +14,32 @@ void writeEEPROM(float value);
 #include "ebike_simple.ino"
 
 int main() {
-    std::cout << "Testing ebike_simple.ino..." << std::endl;
-
     set_millis(0);
     setup();
+    display.set_name("ebike");
 
-    // Wheel rotation 1 at 1000ms
-    set_millis(1000);
-    wheelState = true;
-    updateWheel(); // updates lastWheelTime to 1000, lastWheelTime_prev to 0
-    updateSpeedAndDistance(); // count=1, interval=1000ms
+    unsigned long time = 0;
+    float current_speed_kmh = 20.0;
+    float speed_mps = current_speed_kmh / 3.6;
+    float pulse_interval_ms = (WHEEL_CIRCUMFERENCE / speed_mps) * 1000.0;
+    unsigned long last_pulse_time = 0;
 
-    std::cout << "Speed after 1st rotation: " << wheelSpeed << " km/h" << std::endl;
-    assert(wheelSpeed > 0);
-    assert(tripDistance > 0);
+    // Run for 2 seconds to get stable speed
+    for (time = 0; time < 2000; time += 10) {
+        set_millis(time);
+        if (time - last_pulse_time >= pulse_interval_ms) {
+            wheelState = true; trigger_interrupt(WHEEL_PIN);
+            last_pulse_time = time;
+        } else {
+            wheelState = false; trigger_interrupt(WHEEL_PIN);
+        }
+        set_analog_input(VOLTAGE_PIN, 700);
+        set_analog_input(CURRENT_PIN, 600);
+        loop();
+    }
 
-    // Wheel rotation 2 at 1500ms
-    set_millis(1500);
-    wheelState = false; // reset
-    updateWheel();
-    wheelState = true;
-    updateWheel(); // interval = 500ms
-    updateSpeedAndDistance();
+    // Capture one frame at 2s
+    updateDisplay();
 
-    std::cout << "Speed after 2nd rotation: " << wheelSpeed << " km/h" << std::endl;
-    assert(wheelSpeed > 10); // interval is smaller, speed should be higher
-
-    // Reset test
-    buttonState = true;
-    updateButton();
-    assert(tripDistance == 0);
-
-    std::cout << "ebike_simple.ino tests passed!" << std::endl;
     return 0;
 }

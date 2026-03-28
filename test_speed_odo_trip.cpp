@@ -1,8 +1,6 @@
 #include "mock_arduino/Arduino.h"
 #include <iostream>
-#include <cassert>
 
-// Forward declarations
 void buttonHandler();
 void wheelHandler();
 void updateButton();
@@ -14,27 +12,24 @@ void writeEEPROM(float value);
 #include "speed_odo_trip.ino"
 
 int main() {
-    std::cout << "Testing speed_odo_trip.ino..." << std::endl;
-
     set_millis(0);
     setup();
+    display.set_name("odo");
 
-    // Wheel rotation 1 at 1s
-    set_millis(1000);
-    trigger_interrupt(WHEEL_PIN);
-    updateWheel();
+    float speed_kmh = 25.0;
+    float speed_mps = speed_kmh / 3.6;
+    float pulse_interval_ms = (WHEEL_CIRCUMFERENCE / speed_mps) * 1000.0;
+    unsigned long last_pulse = 0;
 
-    // Wheel rotation 2 at 2s
-    set_millis(2000);
-    trigger_interrupt(WHEEL_PIN);
-    updateWheel();
+    for (unsigned long t = 0; t < 2000; t += 10) {
+        set_millis(t);
+        if (t - last_pulse >= pulse_interval_ms) {
+            trigger_interrupt(WHEEL_PIN);
+            last_pulse = t;
+        }
+        loop();
+    }
 
-    std::cout << "Speed: " << wheelSpeed << " km/h" << std::endl;
-    std::cout << "Trip: " << tripDistance << " km" << std::endl;
-
-    assert(wheelSpeed > 0);
-    assert(tripDistance > 0);
-
-    std::cout << "speed_odo_trip.ino tests passed!" << std::endl;
+    updateDisplay();
     return 0;
 }

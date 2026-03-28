@@ -24,6 +24,8 @@ void writeEEPROM(float value);
 #define OLED_RESET 13
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT,
   OLED_MOSI, OLED_CLK, OLED_DC, OLED_RESET, OLED_CS);
+unsigned long lastDisplayUpdate = 0;
+#define DISPLAY_INTERVAL 500
 
 // Button settings
 #define BUTTON_PIN 2 // Pin for the reset button
@@ -92,7 +94,10 @@ void loop() {
   updateWheel();
 
   // Update display
-  updateDisplay();
+  if (millis() - lastDisplayUpdate >= DISPLAY_INTERVAL) {
+    updateDisplay();
+    lastDisplayUpdate = millis();
+  }
 
   // Check if wheel is inactive
   if (millis() - lastWheelTime > WHEEL_TIMEOUT) {

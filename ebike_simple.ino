@@ -30,6 +30,8 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT,
 #define BRIGHTNESS_MIN 0 // Minimum brightness value
 #define BRIGHTNESS_STEP 5 // Brightness decrement step
 int brightness = BRIGHTNESS_MAX; // Current brightness value
+unsigned long lastDisplayUpdate = 0;
+#define DISPLAY_INTERVAL 500 // Update display every 500ms
 
 // Button settings
 #define BUTTON_PIN 2 // Pin for the reset button
@@ -124,7 +126,10 @@ void loop() {
   updateVoltageAndCurrent();
 
   // Update display
-  updateDisplay();
+  if (millis() - lastDisplayUpdate >= DISPLAY_INTERVAL) {
+    updateDisplay();
+    lastDisplayUpdate = millis();
+  }
 
   // Check if wheel is inactive
   if (millis() - lastWheelTime > WHEEL_TIMEOUT) {
@@ -285,12 +290,12 @@ void updateVoltageAndCurrent() {
   // Calculate the power
   power = voltage * current; // Power formula
 
-  static unsigned long lastUpdate = 0;
+  static unsigned long lastEnergyUpdate = 0;
   unsigned long currentTime = millis();
-  if (lastUpdate != 0) {
-    energy += power * (currentTime - lastUpdate) / 3600000.0; // Energy formula in Wh
+  if (lastEnergyUpdate != 0) {
+    energy += power * (currentTime - lastEnergyUpdate) / 3600000.0; // Energy formula in Wh
   }
-  lastUpdate = currentTime;
+  lastEnergyUpdate = currentTime;
 
   // Calculate the watts per km
   if (tripDistance > 0.001) {
