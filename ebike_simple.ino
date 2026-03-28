@@ -5,6 +5,17 @@
 #include <Adafruit_SSD1306.h>
 #include <LowPower.h>
 
+// Forward declarations
+void buttonHandler();
+void wheelHandler();
+void updateButton();
+void updateWheel();
+void updateSpeedAndDistance();
+void updateVoltageAndCurrent();
+void updateDisplay();
+float readEEPROM();
+void writeEEPROM(float value);
+
 // Display settings
 #define SCREEN_WIDTH 128 // OLED display width, in pixels
 #define SCREEN_HEIGHT 64 // OLED display height, in pixels
@@ -19,30 +30,34 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT,
 #define BRIGHTNESS_MIN 0 // Minimum brightness value
 #define BRIGHTNESS_STEP 5 // Brightness decrement step
 int brightness = BRIGHTNESS_MAX; // Current brightness value
+unsigned long lastDisplayUpdate = 0;
+#define DISPLAY_INTERVAL 500 // Update display every 500ms
 
 // Button settings
 #define BUTTON_PIN 2 // Pin for the reset button
 #define BUTTON_DEBOUNCE 50 // Debounce time in milliseconds
-bool buttonState = false; // Current state of the button
+volatile bool buttonState = false; // Current state of the button
 bool lastButtonState = false; // Previous state of the button
-unsigned long lastDebounceTime = 0; // Last time the button state changed
+volatile unsigned long lastButtonDebounceTime = 0; // Last time the button state changed
 
 // Wheel settings
 #define WHEEL_PIN 3 // Pin for the wheel sensor
 #define WHEEL_DIAMETER 0.66 // Wheel diameter in meters
 #define WHEEL_CIRCUMFERENCE (WHEEL_DIAMETER * PI) // Wheel circumference in meters
-volatile unsigned long wheelCount = 0; // Number of wheel rotations
+volatile unsigned long wheelCount = 0; // Number of wheel rotations since last update
 volatile unsigned long lastWheelTime = 0; // Last time the wheel rotated
+volatile unsigned long lastWheelTime_prev = 0; // Second to last wheel rotation time
+volatile unsigned long lastWheelDebounceTime = 0; // Last time the wheel sensor state changed
 float wheelSpeed = 0; // Current speed in km/h
 float tripDistance = 0; // Current trip distance in km
 float totalDistance = 0; // Total distance in km
 #define WHEEL_TIMEOUT 300000 // Timeout for wheel inactivity in milliseconds
 #define WHEEL_MIN_SPEED 0.5 // Minimum speed to consider in km/h
 #define WHEEL_DEBOUNCE 10 // Debounce time for wheel sensor in milliseconds
-bool wheelState = false; // Current state of the wheel sensor
+volatile bool wheelState = false; // Current state of the wheel sensor
 bool lastWheelState = false; // Previous state of the wheel sensor
 
-// Voltage and current settings // Added this section
+// Voltage and current settings
 #define VOLTAGE_PIN A0 // Pin for the voltage sensor
 #define CURRENT_PIN A1 // Pin for the current sensor
 #define VOLTAGE_DIVIDER 10 // Voltage divider ratio
@@ -87,12 +102,13 @@ void setup() {
   pinMode(WHEEL_PIN, INPUT);
   attachInterrupt(digitalPinToInterrupt(WHEEL_PIN), wheelHandler, CHANGE);
 
-  // Initialize voltage and current // Added this line
+  // Initialize voltage and current
   pinMode(VOLTAGE_PIN, INPUT);
   pinMode(CURRENT_PIN, INPUT);
 
   // Read total distance from EEPROM
   totalDistance = readEEPROM();
+  if (isnan(totalDistance)) totalDistance = 0;
 }
 
 // Loop function
@@ -106,11 +122,14 @@ void loop() {
   // Update wheel speed and distance
   updateSpeedAndDistance();
 
-  // Update voltage and current // Added this line
+  // Update voltage and current
   updateVoltageAndCurrent();
 
   // Update display
-  updateDisplay();
+  if (millis() - lastDisplayUpdate >= DISPLAY_INTERVAL) {
+    updateDisplay();
+    lastDisplayUpdate = millis();
+  }
 
   // Check if wheel is inactive
   if (millis() - lastWheelTime > WHEEL_TIMEOUT) {
@@ -149,9 +168,9 @@ void buttonHandler() {
   unsigned long currentTime = millis();
 
   // Check if the button state changed
-  if (currentTime - lastDebounceTime > BUTTON_DEBOUNCE) {
+  if (currentTime - lastButtonDebounceTime > BUTTON_DEBOUNCE) {
     // Update the last debounce time
-    lastDebounceTime = currentTime;
+    lastButtonDebounceTime = currentTime;
 
     // Toggle the button state
     buttonState = !buttonState;
@@ -164,9 +183,9 @@ void wheelHandler() {
   unsigned long currentTime = millis();
 
   // Check if the wheel state changed
-  if (currentTime - lastDebounceTime > WHEEL_DEBOUNCE) {
+  if (currentTime - lastWheelDebounceTime > WHEEL_DEBOUNCE) {
     // Update the last debounce time
-    lastDebounceTime = currentTime;
+    lastWheelDebounceTime = currentTime;
 
     // Toggle the wheel state
     wheelState = !wheelState;
@@ -175,17 +194,22 @@ void wheelHandler() {
 
 // Update button state
 void updateButton() {
+  bool currentButtonState;
+  noInterrupts();
+  currentButtonState = buttonState;
+  interrupts();
+
   // Check if the button state changed
-  if (buttonState != lastButtonState) {
+  if (currentButtonState != lastButtonState) {
     // Update the last button state
-    lastButtonState = buttonState;
+    lastButtonState = currentButtonState;
 
     // Check if the button is pressed
-    if (buttonState == true) {
+    if (currentButtonState == true) {
       // Reset the trip distance
       tripDistance = 0;
 
-      // Reset the energy // Added this line
+      // Reset the energy
       energy = 0;
     }
   }
@@ -193,18 +217,26 @@ void updateButton() {
 
 // Update wheel state
 void updateWheel() {
+  bool currentWheelState;
+  noInterrupts();
+  currentWheelState = wheelState;
+  interrupts();
+
   // Check if the wheel state changed
-  if (wheelState != lastWheelState) {
+  if (currentWheelState != lastWheelState) {
     // Update the last wheel state
-    lastWheelState = wheelState;
+    lastWheelState = currentWheelState;
 
     // Check if the wheel is rotating
-    if (wheelState == true) {
+    if (currentWheelState == true) {
+      noInterrupts();
       // Increment the wheel count
       wheelCount++;
 
-      // Update the last wheel time
+      // Update the last wheel times
+      lastWheelTime_prev = lastWheelTime;
       lastWheelTime = millis();
+      interrupts();
 
       // Restore the brightness to maximum
       brightness = BRIGHTNESS_MAX;
@@ -214,23 +246,38 @@ void updateWheel() {
 
 // Update wheel speed and distance
 void updateSpeedAndDistance() {
-  // Calculate the wheel speed in km/h
-  wheelSpeed = (WHEEL_CIRCUMFERENCE * wheelCount * 3.6) / (millis() - lastWheelTime);
+  unsigned long count;
+  unsigned long lastTime;
+  unsigned long lastTime_prev;
+  unsigned long currentTime = millis();
 
-  // Check if the wheel speed is above the minimum threshold
-  if (wheelSpeed > WHEEL_MIN_SPEED) {
-    // Calculate the trip distance in km
-    tripDistance += (WHEEL_CIRCUMFERENCE * wheelCount) / 1000;
-
-    // Calculate the total distance in km
-    totalDistance += (WHEEL_CIRCUMFERENCE * wheelCount) / 1000;
-  }
-
-  // Reset the wheel count
+  noInterrupts();
+  count = wheelCount;
+  lastTime = lastWheelTime;
+  lastTime_prev = lastWheelTime_prev;
   wheelCount = 0;
+  interrupts();
+
+  if (count > 0) {
+    unsigned long timeElapsed = lastTime - lastTime_prev;
+    if (timeElapsed > 0) {
+      // Calculate speed in km/h based on interval between rotations
+      wheelSpeed = (WHEEL_CIRCUMFERENCE * 3600.0) / timeElapsed;
+    }
+
+    // Accumulate distance
+    float distance = (WHEEL_CIRCUMFERENCE * count) / 1000.0;
+    tripDistance += distance;
+    totalDistance += distance;
+  } else {
+    // If no rotation for a while, set speed to 0
+    if (currentTime - lastTime > 2000) {
+      wheelSpeed = 0;
+    }
+  }
 }
 
-// Update voltage and current // Added this function
+// Update voltage and current
 void updateVoltageAndCurrent() {
   // Read the analog values from the sensors
   int voltageRaw = analogRead(VOLTAGE_PIN);
@@ -240,12 +287,18 @@ void updateVoltageAndCurrent() {
   voltage = (voltageRaw * 5.0 / 1023.0) * VOLTAGE_DIVIDER; // Voltage divider formula
   current = ((currentRaw * 5.0 / 1023.0) - CURRENT_ZERO) / CURRENT_SENSITIVITY; // ACS712 formula
 
-  // Calculate the power and energy
+  // Calculate the power
   power = voltage * current; // Power formula
-  energy += power * (millis() - lastWheelTime) / 3600000.0; // Energy formula
+
+  static unsigned long lastEnergyUpdate = 0;
+  unsigned long currentTime = millis();
+  if (lastEnergyUpdate != 0) {
+    energy += power * (currentTime - lastEnergyUpdate) / 3600000.0; // Energy formula in Wh
+  }
+  lastEnergyUpdate = currentTime;
 
   // Calculate the watts per km
-  if (tripDistance > 0) {
+  if (tripDistance > 0.001) {
     wattsPerKm = energy / tripDistance; // Watts per km formula
   }
   else {
@@ -264,32 +317,33 @@ void updateDisplay() {
   // Display current speed in big font
   display.setTextSize(3);
   display.setTextColor(WHITE);
-  display.setCursor(0,0);
+  display.setCursor(0, 0);
   display.print(wheelSpeed, 1);
+  display.setTextSize(1);
   display.print(" km/h");
 
-  // Display last stored trip in small font in the bottom right corner
+  // Display the watts per km
   display.setTextSize(1);
-  display.setCursor(80, 54);
+  display.setCursor(0, 30);
+  display.print("Power: ");
+  display.print(wattsPerKm, 1);
+  display.print(" W/km");
+
+  // Middle line: Total Distance
+  display.setCursor(0, 42);
+  display.print("Total: ");
+  display.print(totalDistance, 1);
+  display.print(" km");
+
+  // Bottom line: Trip and Reset state
+  display.setCursor(0, 54);
   display.print("Trip: ");
   display.print(tripDistance, 2);
   display.print(" km");
 
-  // Display total trip counter in bottom left corner
-  display.setCursor(0, 54);
-  display.print("Total: ");
-  display.print(totalDistance, 2);
-  display.print(" km");
-
-  // Display the button state
-  display.setCursor(64, 54);
-  display.print("Reset: ");
+  display.setCursor(90, 54);
+  display.print("R:");
   display.print(buttonState ? "ON" : "OFF");
-
-  // Display the watts per km in small font above the trip counter // Added this line
-  display.setCursor(80, 40);
-  display.print("W/km: ");
-  display.print(wattsPerKm, 2);
 
   // Display the data
   display.display();

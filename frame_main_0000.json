@@ -1,0 +1,7 @@
+{
+  "width": 128,
+  "height": 64,
+  "commands": [
+    {"type": "text", "x": 0, "y": 0, "size": 1, "text": "Bicycle Computer", "color": 1}
+  ]
+}
